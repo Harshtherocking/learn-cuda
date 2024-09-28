@@ -1,2 +1,4 @@
-# learn-cuda
-give those tiny processing units some work to do, tell them how to communicate among themselves, collect what they mined. Sell that to others in name of parallel computing
+## Goal :
+[] learn cuda architecture  
+[] n dim matrix related algorithms
+[] computer vision algorithms
