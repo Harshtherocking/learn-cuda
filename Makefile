@@ -1,6 +1,6 @@
 main : main.cu
 	@mkdir -p ./bin
-	@nvcc main.cu mat.cu -o ./bin/temp
+	@nvcc main.cu ./utils/mat.cu -o ./bin/temp
 	@echo "excuting file : "
 	@./bin/temp
 

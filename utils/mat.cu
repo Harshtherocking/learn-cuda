@@ -2,9 +2,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include "mat.cuh"
+#include "env.cuh"
 
-#define B 5
-#define TEMP 50
 
 // Fill Array with integers less than 10
 void fill_rand_int (int * arr, int row, int col){
@@ -48,7 +47,7 @@ void serialMatMul (int * arr1, int * arr2, int * arr3, int r1, int c1, int r2, i
 //
 //   if (tidx < r1 && tidy < c2){
 //     int sum = 0;
-//     for (int i=0; i<c2; i++){
+//     for (int i=0; i<c1; i++){
 //       sum += a[tidx * c1 + i] * b[i* c2 + tidy];
 //     }
 //     c[tidx * c2 + tidy] = sum;
@@ -60,41 +59,55 @@ void serialMatMul (int * arr1, int * arr2, int * arr3, int r1, int c1, int r2, i
 // Block wise Parallel Matrix Multiplication
 __global__ void kernalMatMul (int * a, int * b, int *c, int r1, int c1, int r2, int c2){
   assert(c1==r2);
-
-  // let only one thread do the copying
-  if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0){
-    __shared__ int shared_a[B*TEMP];
-    __shared__ int shared_b[B*TEMP];
-
-    // copy rows 
-    memcpy(shared_a, a + blockIdx.x *B*c1 , B*c1);
-
-    //copy coloums 
-    for (int i=0; i<r2; i++){
-      memcpy(shared_b + B, b + i*r2*c2 + blockIdx.y + B, B);
-    }
-
-  }
   
-  // then wait for other threads 
+  int bx = blockIdx.x;
+  int by = blockIdx.y;
+  
+  int tx = threadIdx.x;
+  int ty = threadIdx.y;
+
+  int i = bx * blockDim.x + tx;
+  int j = by * blockDim.y + ty;
+
+  __shared__ int sh_a [B*K];
+  __shared__ int sh_b [B*K];
+
+  //syncting so that shared memory stays defined for each thread in the block
   __syncthreads();
 
-  // offset to first element of C in a particular block
-  int offset = B * (blockIdx.x * c2 + blockIdx.y);
+  // copying data only once per block 
+  if (!(tx | ty)){
+    int offset_a = B*bx*K;
 
-  // work for each thread 
+    for (int i=0; i<B*K; i++){
+      // copying rows from a to sh_a
+      sh_a[i] = a[offset_a + i];
 
-  int sum = 0;
-  for (int i=0; i<c1; i++){
-    sum += shared_a[threadIdx.x * c1 + i] * shared_b[i* B + threadIdx.y];
+    }
+
+    for (int i=0; i<K; i++){
+      int offset_b = c2 * i + B * blockIdx.y;
+      for (int j=0; j<B; j++){
+         // copying coloums from b to sh_b
+         sh_b [B*i + j] = b[offset_b + j];
+      }
+    }
+
+  } 
+  
+  // syncing so that each thread has access to copied data in shared memory
+   __syncthreads();
+
+
+  // working for each thread
+  int local_c_tx_ty =0;
+  for (int i=0; i<K; i++){
+    local_c_tx_ty += sh_a[tx * K + i] * sh_b[i * B + ty];
   }
-  c[offset + threadIdx.x * B + threadIdx.y] = sum;
+
+  // mapping local calc to global solution array
+  c[i * c2 + j] = local_c_tx_ty;
 
 }
-
-
-
-
-
 
 
