@@ -21,6 +21,14 @@ void printMat(int * arr, int row, int col){
   }
 }
 
+void printMat(float * arr, int row, int col){
+  for (int i=0; i<row; i++){
+    for (int j=0; j<col; j++){
+      printf("%f ", arr[i*col + j]);
+    }
+    printf("\n");
+  }
+}
 
 // Sequential Matrix Multiplication 
 void serialMatMul (int * arr1, int * arr2, int * arr3, int r1, int c1, int r2, int c2){

@@ -7,6 +7,7 @@ void fill_rand_int (int * arr, int row, int col);
 
 // Print 2D Matrix
 void printMat(int * arr, int row, int col);
+void printMat(float * arr, int row, int col);
 
 
 // Sequential Matrix Multiplication 
