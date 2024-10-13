@@ -3,7 +3,7 @@
 #include <assert.h>
 #include "mat.cuh"
 #include "env.cuh"
-
+#include <stdint.h>
 
 // Fill Array with integers less than 10
 void fill_rand_int (int * arr, int row, int col){
@@ -29,6 +29,16 @@ void printMat(float * arr, int row, int col){
     printf("\n");
   }
 }
+
+void printMat(uint8_t* arr, int row, int col){
+  for (int i=0; i<row; i++){
+    for (int j=0; j<col; j++){
+      printf("%d ", arr[i*col + j]);
+    }
+    printf("\n");
+  }
+}
+
 
 // Sequential Matrix Multiplication 
 void serialMatMul (int * arr1, int * arr2, int * arr3, int r1, int c1, int r2, int c2){
@@ -74,6 +84,8 @@ __global__ void kernalMatMul (int * a, int * b, int *c, int r1, int c1, int r2, 
   int tx = threadIdx.x;
   int ty = threadIdx.y;
 
+  // Global indexing to insert element in Global resultant matrix
+  // C[i][y]
   int i = bx * blockDim.x + tx;
   int j = by * blockDim.y + ty;
 
@@ -117,5 +129,3 @@ __global__ void kernalMatMul (int * a, int * b, int *c, int r1, int c1, int r2, 
   c[i * c2 + j] = local_c_tx_ty;
 
 }
-
-

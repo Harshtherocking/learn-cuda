@@ -1,68 +1,101 @@
 #include <math.h>
+#include <stdint.h>
 
-#define PIE 3.14159265 
+#define PIE 3.14 
 
-typedef struct GuassianKernel {
-  float * kernel;
-  int sigma;
-  int radius;
-} GuassianKernel;
-
-
-
-// to Calculate Guassian Function value for each element in the Kernel
-__global__ void GaussianFunc (float * kernel, int * sigma, int * radius){
-
-  int sig = * sigma;
-  int rad = * radius;
-
-  // threadIdx offset 
-  int tx = threadIdx.x - rad;
-  int ty = threadIdx.y - rad;
-
-  if (-rad < tx < rad && -rad < ty < rad){
-    kernel[tx * (2*rad + 1) + ty] = exp(-(tx*tx + ty*ty)/(2*sig*sig)) / (2 * PIE * sig*sig); 
+/*
+00000000000000
+00000000000000
+00**********00
+00**********00
+00**********00
+00**********00
+00000000000000
+00000000000000
+*/
+void Padding(uint8_t * padd_img, uint8_t * img, int width, int height, int padd_rad){
+  // add initial layer of zeros 
+  int offset = 0;
+  for (int i=0; i<padd_rad; i++){
+    memset(padd_img + offset, 0, sizeof(uint8_t) * (width  + 2 * padd_rad));
+    offset += width + 2 * padd_rad;
   }
 
+  for (int i=0; i<height; i++){
+    // sert initial zeros in starting of each row
+    memset(padd_img+offset, 0, sizeof(uint8_t)*padd_rad);
+
+    // copying i th row from image
+    memcpy(padd_img + offset + padd_rad, img + (i* width), sizeof(uint8_t) * width);
+
+    // inserting last zeros in ending of each row
+    memset(padd_img + offset + padd_rad + width, 0, sizeof(uint8_t) * padd_rad);
+
+    offset += width + 2 * padd_rad;
+  }
+
+  // add ending layer of zeros 
+  for (int i=0; i<padd_rad; i++){
+    memset(padd_img + offset, 0, sizeof(uint8_t) * (width  + 2 * padd_rad));
+    offset += width + 2 * padd_rad;
+  }
 }
 
 
 
-void init_kernel (GuassianKernel * g, int sigma, int radius){
+/*
+To Calculate Guassian Function value for Each element in the Kernal  
+*/
+__global__ void GuassianFunc (float * kernel, int sigma, int radius){
 
-  int kernel_size = (2*radius + 1) * (2*radius + 1);
+  __shared__ float constant;
 
-  g->sigma = sigma;
-  g->radius = radius;
-  g->kernel = (float*) malloc (sizeof(float) * kernel_size);
+  constant = 2 * sigma * sigma;
 
+  __syncthreads();
   
-  // device variable declaration
-  float * d_kernel;
-  int * d_radius;
-  int * d_sigma; 
+  // threadIdx offset 
+  int tx = threadIdx.x - radius;
+  int ty = threadIdx.y - radius;
 
+  float value = exp(- (tx*tx  + ty*ty) / constant) / (PIE * constant); 
+  kernel[threadIdx.x * (2*radius + 1) + threadIdx.y] = value; 
 
-  // device variable memory allocation
-  cudaMalloc(&d_kernel, sizeof(float) * kernel_size);
-  cudaMalloc(&d_radius, sizeof(int));
-  cudaMalloc(&d_sigma, sizeof(int));
+  __syncthreads();
 
-
-  // memory copy from host to device 
-  cudaMemcpy(d_radius, &g->radius, sizeof(int), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_sigma, &g->sigma, sizeof(int), cudaMemcpyHostToDevice);
-
-  
-  // Grid Dim and Block Dim preparation
-  const dim3 gD (1,1,1);
-  const dim3 bD (2*radius+1, 2*radius+1, 1);
-
-
-  // launching a kernal 
-  GuassianKernel<<<gD,bD>>>(d_kernel, d_sigma, d_radius);
-
-  // memory copy from device to host
-  cudaMemcpy (g->kernel, d_kernel, sizeof(float) * kernel_size, cudaMemcpyDeviceToHost);
-  
 }
+
+
+__global__ void GuassianBlur (
+  uint8_t* image, 
+  uint8_t * new_image, 
+  float * kernel, 
+  int width,
+  int height, 
+  int kernel_width
+  )
+  { 
+    __shared__ int radius;
+    __syncthreads();
+
+    // indices for the image
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tz = threadIdx.z;
+
+    // place the indices for Kernel
+    if (tx == 0 && ty == 0 && tz == 0){
+      radius = (kernel_width - 1)/2;
+    }
+    __syncthreads();
+
+    /*
+    calculation for each neighbour of Pixel (tx,ty)
+    Pixel (tx-radius, ty-radius) is the starting point for Convolution window
+    Check if Pixel [(tx - rad) * width + ty + tz] lies in the range
+    */ 
+
+    if (0<= tx-radius < height && 0<= ty-radius < width && 0<= tx + radius < height && 0<= ty + radius < width)
+    new_image[tx * width + ty] += image[(tx-radius) * width + (ty-radius) + tz] * kernel[tz];
+
+  }
