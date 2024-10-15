@@ -10,6 +10,12 @@ void fill_rand_int (int * arr, int row, int col){
   for (int i=0; i<row*col; i++) arr[i] = rand()%10;
 }
 
+// Fill Array with random double 
+void fill_rand_double (double * arr, int row, int col){
+  for (int i=0; i<row*col; i++) arr[i] = rand()/RAND_MAX;
+}
+
+
 
 // Print 2D Matrix
 void printMat(int * arr, int row, int col){
@@ -21,10 +27,10 @@ void printMat(int * arr, int row, int col){
   }
 }
 
-void printMat(float * arr, int row, int col){
+void printMat(double * arr, int row, int col){
   for (int i=0; i<row; i++){
     for (int j=0; j<col; j++){
-      printf("%f ", arr[i*col + j]);
+      printf("%.2f ", arr[i*col + j]);
     }
     printf("\n");
   }
@@ -38,6 +44,16 @@ void printMat(uint8_t* arr, int row, int col){
     printf("\n");
   }
 }
+
+void printMat(long long* arr, int row, int col){
+  for (int i=0; i<row; i++){
+    for (int j=0; j<col; j++){
+      printf("%lld ", arr[i*col + j]);
+    }
+    printf("\n");
+  }
+}
+
 
 
 // Sequential Matrix Multiplication 
@@ -57,6 +73,18 @@ void serialMatMul (int * arr1, int * arr2, int * arr3, int r1, int c1, int r2, i
 }
 
 
+void squareMatMul(double* arr1, double * arr2, double * arr3, int N){
+  for (int i=0; i<N; i++){
+    for (int k=0; k<N; k++){
+
+      int sum = 0; 
+      for (int j=0; j<N; j++) sum += arr1[i*N + j] + arr2[j*N + k];
+      arr3[i*N + k] = sum;
+    }
+  }
+
+}
+
 // Parallel Matrix Multiplication
 // __global__ void kernalMatMul (int * a, int * b, int *c, int r1, int c1, int r2, int c2){
 //   assert(c1==r2);
@@ -74,58 +102,101 @@ void serialMatMul (int * arr1, int * arr2, int * arr3, int r1, int c1, int r2, i
 // }
 
 
-// Block wise Parallel Matrix Multiplication
-__global__ void kernalMatMul (int * a, int * b, int *c, int r1, int c1, int r2, int c2){
-  assert(c1==r2);
+
+__global__ void Tiled_Mat_Multi(int * a, int * b, int *c, int N){
   
   int bx = blockIdx.x;
   int by = blockIdx.y;
+  int bz = blockIdx.z;
   
   int tx = threadIdx.x;
   int ty = threadIdx.y;
 
-  // Global indexing to insert element in Global resultant matrix
   // C[i][y]
   int i = bx * blockDim.x + tx;
   int j = by * blockDim.y + ty;
 
-  __shared__ int sh_a [B*K];
-  __shared__ int sh_b [B*K];
-
-  //syncting so that shared memory stays defined for each thread in the block
+  __shared__ int sh_a [B*B];
+  __shared__ int sh_b [B*B];
   __syncthreads();
 
+
   // copying data only once per block 
-  if (!(tx | ty)){
-    int offset_a = B*bx*K;
+  if (tx == 0 && ty == 0){
+    int offset_a = B*bx*N + B*bz;
+    int offset_b = B*bz*N + B*by;
 
-    for (int i=0; i<B*K; i++){
-      // copying rows from a to sh_a
-      sh_a[i] = a[offset_a + i];
-
-    }
-
-    for (int i=0; i<K; i++){
-      int offset_b = c2 * i + B * blockIdx.y;
-      for (int j=0; j<B; j++){
-         // copying coloums from b to sh_b
-         sh_b [B*i + j] = b[offset_b + j];
+    for (int x=0; x<B; x++){
+      // copying each row in Tile
+      for (int y=0; y<B; y++){
+        sh_a[x * B + y] = a[offset_a + y];
+        sh_b[x * B + y] = b[offset_b + y];
       }
+      // offset to next row in a the Tile
+      offset_a += N;
+      offset_b += N;
     }
 
-  } 
-  
-  // syncing so that each thread has access to copied data in shared memory
-   __syncthreads();
-
-
-  // working for each thread
-  int local_c_tx_ty =0;
-  for (int i=0; i<K; i++){
-    local_c_tx_ty += sh_a[tx * K + i] * sh_b[i * B + ty];
   }
 
-  // mapping local calc to global solution array
-  c[i * c2 + j] = local_c_tx_ty;
+  __syncthreads();
 
+  // sum specific to a Block
+  int local_sum  = 0;
+  for (int k=0; k<B; k++){
+    local_sum += sh_a[tx * B + k] * sh_b[k * B + ty];
+  }
+
+  // add local sum to Global resultant matrix using Atomic Add
+  atomicAdd(&c[i * N + j], local_sum);
 }
+
+
+
+// __global__ void Tiled_Mat_Multi(double* a, double * b, double *c, int N){
+  
+//   int bx = blockIdx.x;
+//   int by = blockIdx.y;
+//   int bz = blockIdx.z;
+  
+//   int tx = threadIdx.x;
+//   int ty = threadIdx.y;
+
+//   // C[i][y]
+//   int i = bx * blockDim.x + tx;
+//   int j = by * blockDim.y + ty;
+
+//   __shared__ double sh_a [B*B];
+//   __shared__ double sh_b [B*B];
+//   __syncthreads();
+
+
+//   // copying data only once per block 
+//   if (tx == 0 && ty == 0){
+//     int offset_a = B*bx*N + B*bz;
+//     int offset_b = B*bz*N + B*by;
+
+//     for (int x=0; x<B; x++){
+//       // copying each row in Tile
+//       for (int y=0; y<B; y++){
+//         sh_a[x * B + y] = a[offset_a + y];
+//         sh_b[x * B + y] = b[offset_b + y];
+//       }
+//       // offset to next row in a the Tile
+//       offset_a += N;
+//       offset_b += N;
+//     }
+
+//   }
+
+//   __syncthreads();
+
+//   // sum specific to a Block
+//   double local_sum  = 0;
+//   for (int k=0; k<B; k++){
+//     local_sum += sh_a[tx * B + k] * sh_b[k * B + ty];
+//   }
+
+//   // add local sum to Global resultant matrix using Atomic Add
+//   atomicAdd(&c[i * N + j], local_sum);
+// }

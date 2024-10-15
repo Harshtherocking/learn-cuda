@@ -1,7 +1,7 @@
 main : main.cu
 	@mkdir -p ./bin
 	@nvcc main.cu ./utils/mat.cu -o ./bin/temp
-	@echo "excuting file : "
+	@echo "successfully built"
 	@./bin/temp
 
 prof : main.cu
@@ -9,3 +9,4 @@ prof : main.cu
 
 clean : 
 	@rm -rf ./bin
+	@clear

@@ -1,2 +1,2 @@
-#define K 10
-#define B 5
+#pragma once
+#define B 2
